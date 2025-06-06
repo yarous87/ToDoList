@@ -13,6 +13,7 @@ using ToDoList.Converters;
 using ToDoList.Data;
 using ToDoList.Models;
 using System.Linq;
+using System;
 
 namespace ToDoList
 {
@@ -23,6 +24,7 @@ namespace ToDoList
     {
         private readonly TodoContext _context;
         private ObservableCollection<Todo> _todos;
+        private readonly AppConfig _config;
 
         public MainWindow()
         {
@@ -33,12 +35,30 @@ namespace ToDoList
                 _todos = new ObservableCollection<Todo>(_context.GetAllTodos());
                 TodoListView.ItemsSource = _todos;
                 NewTodoTextBox.KeyDown += NewTodoTextBox_KeyDown;
+                _config = AppConfig.Instance;
+                ApplyFilter(_config.CurrentFilter);
+                UpdateRadioButtonState(_config.CurrentFilter);
             }
             catch (TodoDataException ex)
             {
                 ShowErrorDialog("Database Error", ex.Message);
                 Application.Current.Shutdown();
             }
+            catch (Exception ex)
+            {
+                ShowErrorDialog("Error", "An unexpected error occurred: " + ex.Message);
+                Application.Current.Shutdown();
+            }
+        }
+
+        private void UpdateRadioButtonState(TaskFilter filter)
+        {
+            if (AllFilter == null || PendingFilter == null || CompletedFilter == null)
+                return;
+
+            AllFilter.IsChecked = filter == TaskFilter.All;
+            PendingFilter.IsChecked = filter == TaskFilter.Pending;
+            CompletedFilter.IsChecked = filter == TaskFilter.Completed;
         }
 
         private void ShowErrorDialog(string title, string message)
@@ -76,6 +96,7 @@ namespace ToDoList
                 _context.AddTodo(todo);
                 _todos.Insert(0, todo);
                 NewTodoTextBox.Clear();
+                ApplyFilter(_config.CurrentFilter);
             }
             catch (TodoSaveException ex)
             {
@@ -110,6 +131,7 @@ namespace ToDoList
                     {
                         _todos.Add(item);
                     }
+                    ApplyFilter(_config.CurrentFilter);
                 }
                 catch (TodoSaveException ex)
                 {
@@ -129,6 +151,7 @@ namespace ToDoList
                 {
                     _context.DeleteTodo(todo.Id);
                     _todos.Remove(todo);
+                    ApplyFilter(_config.CurrentFilter);
                 }
                 catch (TodoDeleteException ex)
                 {
@@ -136,5 +159,66 @@ namespace ToDoList
                 }
             }
         }
+
+        private void Filter_Checked(object sender, RoutedEventArgs e)
+        {
+            if (sender is not RadioButton radioButton || string.IsNullOrEmpty(radioButton.Name))
+                return;
+
+            try
+            {
+                TaskFilter filter = radioButton.Name switch
+                {
+                    "AllFilter" => TaskFilter.All,
+                    "PendingFilter" => TaskFilter.Pending,
+                    "CompletedFilter" => TaskFilter.Completed,
+                    _ => TaskFilter.All
+                };
+
+                if (_config != null)
+                {
+                    _config.CurrentFilter = filter;
+                    _config.Save();
+                    ApplyFilter(filter);
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowErrorDialog("Filter Error", "Failed to apply filter: " + ex.Message);
+            }
+        }
+
+        private void ApplyFilter(TaskFilter filter)
+        {
+            if (_todos == null)
+                return;
+
+            try
+            {
+                var filteredItems = filter switch
+                {
+                    TaskFilter.All => _todos,
+                    TaskFilter.Pending => _todos.Where(t => !t.IsCompleted),
+                    TaskFilter.Completed => _todos.Where(t => t.IsCompleted),
+                    _ => throw new FilterException($"Unknown filter: {filter}")
+                };
+
+                TodoListView.ItemsSource = filteredItems;
+            }
+            catch (FilterException fex)
+            {
+                ShowErrorDialog("Filter Error", fex.Message);
+            }
+            catch (Exception ex)
+            {
+                ShowErrorDialog("Filter Error", "Failed to apply filter: " + ex.Message);
+            }
+        }
+    }
+
+    public class TodoItem
+    {
+        public string Title { get; set; }
+        public bool IsCompleted { get; set; }
     }
 }

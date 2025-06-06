@@ -25,4 +25,10 @@ namespace ToDoList.Models
         public TodoDeleteException(string message) : base(message) { }
         public TodoDeleteException(string message, Exception innerException) : base(message, innerException) { }
     }
+
+    public class FilterException : Exception
+    {
+        public FilterException(string message) : base(message) { }
+        public FilterException(string message, Exception inner) : base(message, inner) { }
+    }
 } 
