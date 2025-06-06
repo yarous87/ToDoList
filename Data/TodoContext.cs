@@ -24,7 +24,8 @@ namespace ToDoList.Data
                     Id INTEGER PRIMARY KEY AUTOINCREMENT,
                     Title TEXT NOT NULL,
                     IsCompleted INTEGER NOT NULL,
-                    CreatedAt TEXT NOT NULL
+                    CreatedAt TEXT NOT NULL,
+                    CompletedAt TEXT
                 );";
             command.ExecuteNonQuery();
         }
@@ -36,7 +37,13 @@ namespace ToDoList.Data
             connection.Open();
 
             var command = connection.CreateCommand();
-            command.CommandText = "SELECT * FROM Todos ORDER BY CreatedAt DESC";
+            command.CommandText = @"
+                SELECT * FROM Todos 
+                ORDER BY IsCompleted ASC, 
+                CASE 
+                    WHEN IsCompleted = 1 THEN CompletedAt 
+                    ELSE CreatedAt 
+                END DESC";
 
             using var reader = command.ExecuteReader();
             while (reader.Read())
@@ -46,7 +53,8 @@ namespace ToDoList.Data
                     Id = reader.GetInt32(0),
                     Title = reader.GetString(1),
                     IsCompleted = reader.GetInt32(2) == 1,
-                    CreatedAt = DateTime.Parse(reader.GetString(3))
+                    CreatedAt = DateTime.Parse(reader.GetString(3)),
+                    CompletedAt = reader.IsDBNull(4) ? null : DateTime.Parse(reader.GetString(4))
                 });
             }
 
@@ -60,12 +68,13 @@ namespace ToDoList.Data
 
             var command = connection.CreateCommand();
             command.CommandText = @"
-                INSERT INTO Todos (Title, IsCompleted, CreatedAt)
-                VALUES (@Title, @IsCompleted, @CreatedAt);";
+                INSERT INTO Todos (Title, IsCompleted, CreatedAt, CompletedAt)
+                VALUES (@Title, @IsCompleted, @CreatedAt, @CompletedAt);";
 
             command.Parameters.AddWithValue("@Title", todo.Title);
             command.Parameters.AddWithValue("@IsCompleted", todo.IsCompleted ? 1 : 0);
             command.Parameters.AddWithValue("@CreatedAt", todo.CreatedAt.ToString("o"));
+            command.Parameters.AddWithValue("@CompletedAt", todo.CompletedAt?.ToString("o") ?? (object)DBNull.Value);
 
             command.ExecuteNonQuery();
         }
@@ -78,12 +87,15 @@ namespace ToDoList.Data
             var command = connection.CreateCommand();
             command.CommandText = @"
                 UPDATE Todos 
-                SET Title = @Title, IsCompleted = @IsCompleted
+                SET Title = @Title, 
+                    IsCompleted = @IsCompleted,
+                    CompletedAt = @CompletedAt
                 WHERE Id = @Id;";
 
             command.Parameters.AddWithValue("@Id", todo.Id);
             command.Parameters.AddWithValue("@Title", todo.Title);
             command.Parameters.AddWithValue("@IsCompleted", todo.IsCompleted ? 1 : 0);
+            command.Parameters.AddWithValue("@CompletedAt", todo.CompletedAt?.ToString("o") ?? (object)DBNull.Value);
 
             command.ExecuteNonQuery();
         }
