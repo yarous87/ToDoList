@@ -26,11 +26,29 @@ namespace ToDoList
 
         public MainWindow()
         {
-            InitializeComponent();
-            _context = new TodoContext();
-            _todos = new ObservableCollection<Todo>(_context.GetAllTodos());
-            TodoListView.ItemsSource = _todos;
-            NewTodoTextBox.KeyDown += NewTodoTextBox_KeyDown;
+            try
+            {
+                InitializeComponent();
+                _context = new TodoContext();
+                _todos = new ObservableCollection<Todo>(_context.GetAllTodos());
+                TodoListView.ItemsSource = _todos;
+                NewTodoTextBox.KeyDown += NewTodoTextBox_KeyDown;
+            }
+            catch (TodoDataException ex)
+            {
+                ShowErrorDialog("Database Error", ex.Message);
+                Application.Current.Shutdown();
+            }
+        }
+
+        private void ShowErrorDialog(string title, string message)
+        {
+            MessageBox.Show(
+                message,
+                title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Error
+            );
         }
 
         private void NewTodoTextBox_KeyDown(object sender, KeyEventArgs e)
@@ -46,42 +64,59 @@ namespace ToDoList
             if (string.IsNullOrWhiteSpace(NewTodoTextBox.Text))
                 return;
 
-            var todo = new Todo
+            try
             {
-                Title = NewTodoTextBox.Text.Trim(),
-                IsCompleted = false,
-                CreatedAt = DateTime.Now
-            };
+                var todo = new Todo
+                {
+                    Title = NewTodoTextBox.Text.Trim(),
+                    IsCompleted = false,
+                    CreatedAt = DateTime.Now
+                };
 
-            _context.AddTodo(todo);
-            _todos.Insert(0, todo);
-            NewTodoTextBox.Clear();
+                _context.AddTodo(todo);
+                _todos.Insert(0, todo);
+                NewTodoTextBox.Clear();
+            }
+            catch (TodoSaveException ex)
+            {
+                ShowErrorDialog("Save Error", ex.Message);
+            }
         }
 
         private void CheckBox_Click(object sender, RoutedEventArgs e)
         {
             if (sender is FrameworkElement element && element.DataContext is Todo todo)
             {
-                if (todo.IsCompleted)
+                try
                 {
-                    todo.CompletedAt = DateTime.Now;
+                    if (todo.IsCompleted)
+                    {
+                        todo.CompletedAt = DateTime.Now;
+                    }
+                    else
+                    {
+                        todo.CompletedAt = null;
+                    }
+                    
+                    _context.UpdateTodo(todo);
+                    
+                    // Reorder the list using LINQ
+                    var sortedTodos = _todos.OrderBy(t => t.IsCompleted)
+                                         .ThenByDescending(t => t.IsCompleted ? t.CompletedAt : t.CreatedAt)
+                                         .ToList();
+                    
+                    _todos.Clear();
+                    foreach (var item in sortedTodos)
+                    {
+                        _todos.Add(item);
+                    }
                 }
-                else
+                catch (TodoSaveException ex)
                 {
-                    todo.CompletedAt = null;
-                }
-                
-                _context.UpdateTodo(todo);
-                
-                // Reorder the list using LINQ
-                var sortedTodos = _todos.OrderBy(t => t.IsCompleted)
-                                     .ThenByDescending(t => t.IsCompleted ? t.CompletedAt : t.CreatedAt)
-                                     .ToList();
-                
-                _todos.Clear();
-                foreach (var item in sortedTodos)
-                {
-                    _todos.Add(item);
+                    ShowErrorDialog("Update Error", ex.Message);
+                    // Revert the checkbox state
+                    todo.IsCompleted = !todo.IsCompleted;
+                    todo.CompletedAt = todo.IsCompleted ? DateTime.Now : null;
                 }
             }
         }
@@ -90,8 +125,15 @@ namespace ToDoList
         {
             if (sender is FrameworkElement element && element.DataContext is Todo todo)
             {
-                _context.DeleteTodo(todo.Id);
-                _todos.Remove(todo);
+                try
+                {
+                    _context.DeleteTodo(todo.Id);
+                    _todos.Remove(todo);
+                }
+                catch (TodoDeleteException ex)
+                {
+                    ShowErrorDialog("Delete Error", ex.Message);
+                }
             }
         }
     }
